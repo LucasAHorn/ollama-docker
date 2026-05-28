@@ -145,6 +145,23 @@
       outline: none;
     }
 
+    select {
+      color-scheme: dark;
+      background-color: #11182e;
+      color: var(--text);
+    }
+
+    select option {
+      background-color: #11182e;
+      color: var(--text);
+    }
+
+    select option:checked,
+    select option:focus {
+      background-color: #172554;
+      color: #f8fbff;
+    }
+
     select, .ghost, .primary {
       min-height: 46px;
       padding: 0 14px;
@@ -272,11 +289,12 @@
 
     .message-content pre {
       margin: 0;
-      padding: 14px 16px;
+      padding: 44px 16px 14px;
       border-radius: 14px;
       overflow: auto;
       background: #08101f;
       border: 1px solid rgba(125, 211, 252, 0.16);
+      position: relative;
     }
 
     .message-content pre code {
@@ -286,6 +304,54 @@
       background: transparent;
       color: #e2e8f0;
       white-space: pre;
+    }
+
+    .code-window {
+      position: relative;
+    }
+
+    .code-window .copy-code {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1;
+      min-height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(125, 211, 252, 0.22);
+      background: rgba(8, 16, 31, 0.88);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      backdrop-filter: blur(10px);
+    }
+
+    .code-window .copy-code:hover {
+      border-color: rgba(125, 211, 252, 0.4);
+      background: rgba(14, 24, 45, 0.96);
+    }
+
+    .code-window .copy-code:disabled {
+      cursor: default;
+      opacity: 0.7;
+    }
+
+    .code-window .copy-status {
+      position: absolute;
+      top: 18px;
+      right: 92px;
+      font-size: 12px;
+      color: var(--accent);
+      opacity: 0;
+      transform: translateY(-2px);
+      transition: opacity 150ms ease, transform 150ms ease;
+      pointer-events: none;
+    }
+
+    .code-window.copied .copy-status {
+      opacity: 1;
+      transform: translateY(0);
     }
 
     .message-content ul,
@@ -474,6 +540,98 @@
       }
     }
 
+    async function copyTextToClipboard(text) {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+
+      const fallback = document.createElement('textarea');
+      fallback.value = text;
+      fallback.setAttribute('readonly', 'readonly');
+      fallback.style.position = 'fixed';
+      fallback.style.top = '-9999px';
+      fallback.style.left = '-9999px';
+      document.body.appendChild(fallback);
+      fallback.select();
+      const success = document.execCommand('copy');
+      fallback.remove();
+      if (!success) {
+        throw new Error('Copy failed');
+      }
+    }
+
+    function createCodeWindow(codeText, language = '') {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'code-window';
+      let resetTimer = null;
+
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      if (language) {
+        code.dataset.language = language;
+      }
+      code.textContent = codeText;
+
+      const copyButton = document.createElement('button');
+      copyButton.type = 'button';
+      copyButton.className = 'copy-code';
+      copyButton.textContent = 'Copy';
+
+      const status = document.createElement('span');
+      status.className = 'copy-status';
+      status.textContent = 'Copied';
+
+      copyButton.addEventListener('click', async () => {
+        try {
+          await copyTextToClipboard(codeText);
+          wrapper.classList.add('copied');
+          copyButton.textContent = 'Copied';
+          window.clearTimeout(resetTimer);
+          resetTimer = window.setTimeout(() => {
+            wrapper.classList.remove('copied');
+            copyButton.textContent = 'Copy';
+          }, 1200);
+        } catch (error) {
+          copyButton.textContent = 'Failed';
+          window.clearTimeout(resetTimer);
+          resetTimer = window.setTimeout(() => {
+            copyButton.textContent = 'Copy';
+          }, 1200);
+        }
+      });
+
+      pre.appendChild(code);
+      wrapper.append(copyButton, status, pre);
+      return wrapper;
+    }
+
+    function parseFence(line) {
+      const match = line.match(/^(\s{0,3})(`{3,}|~{3,})(.*)$/);
+      if (!match) {
+        return null;
+      }
+
+      return {
+        marker: match[2][0],
+        length: match[2].length,
+        language: match[3].trim()
+      };
+    }
+
+    function isClosingFence(line, marker, length) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        return false;
+      }
+
+      if (!new RegExp(`^${marker}{${length},}\\s*$`).test(trimmed)) {
+        return false;
+      }
+
+      return true;
+    }
+
     function renderInlineMarkdown(source, parent) {
       let index = 0;
 
@@ -552,25 +710,19 @@
         const line = lines[i];
         const trimmed = line.trimEnd();
         const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
+        const fence = parseFence(line);
 
-        if (trimmed.startsWith('```')) {
+        if (fence) {
           flushParagraph();
-          const codeBlock = document.createElement('pre');
-          const code = document.createElement('code');
-          const language = trimmed.slice(3).trim();
-          if (language) {
-            code.dataset.language = language;
-          }
+          const { marker, length, language } = fence;
           i += 1;
           const codeLines = [];
-          while (i < lines.length && !lines[i].trimEnd().startsWith('```')) {
+          while (i < lines.length && !isClosingFence(lines[i], marker, length)) {
             codeLines.push(lines[i]);
             i += 1;
           }
-          code.textContent = codeLines.join('\n');
-          codeBlock.appendChild(code);
-          container.appendChild(codeBlock);
-          if (i < lines.length && lines[i].trimEnd().startsWith('```')) {
+          container.appendChild(createCodeWindow(codeLines.join('\n'), language));
+          if (i < lines.length && isClosingFence(lines[i], marker, length)) {
             i += 1;
           }
           continue;
