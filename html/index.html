@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ollama Chat</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1020;
+      --bg-2: #11182e;
+      --panel: rgba(16, 24, 43, 0.92);
+      --panel-2: rgba(24, 32, 58, 0.92);
+      --line: rgba(148, 163, 184, 0.16);
+      --text: #e5eefb;
+      --muted: #92a0ba;
+      --accent: #7dd3fc;
+      --accent-2: #a78bfa;
+      --user: #1d4ed8;
+      --assistant: #172554;
+      --error: #fb7185;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      min-height: 100%;
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, rgba(125, 211, 252, 0.14), transparent 30%),
+        radial-gradient(circle at top right, rgba(167, 139, 250, 0.14), transparent 26%),
+        linear-gradient(180deg, var(--bg), #060913 70%);
+      color: var(--text);
+      font: 15px/1.5 "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .shell {
+      width: min(1100px, 100%);
+      min-height: min(92vh, 980px);
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: 16px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: linear-gradient(180deg, rgba(11, 16, 32, 0.92), rgba(8, 12, 24, 0.98));
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 6px 6px 2px;
+    }
+
+    .title h1 {
+      margin: 0;
+      font-size: clamp(26px, 4vw, 38px);
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+    }
+
+    .title p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      max-width: 70ch;
+    }
+
+    .status {
+      min-width: 220px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--muted);
+      text-align: right;
+    }
+
+    .status strong {
+      display: block;
+      color: var(--text);
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+
+    .status .details {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      justify-content: flex-end;
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .status .details span:last-child {
+      color: var(--accent);
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr auto auto;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      position: sticky;
+      top: 16px;
+      z-index: 5;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    label {
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    input, select, textarea, button {
+      font: inherit;
+      color: var(--text);
+    }
+
+    select, textarea, .ghost, .primary {
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.04);
+      outline: none;
+    }
+
+    select, .ghost, .primary {
+      min-height: 46px;
+      padding: 0 14px;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 84px;
+      padding: 12px 14px;
+    }
+
+    select:focus, textarea:focus, .ghost:focus, .primary:focus {
+      border-color: rgba(125, 211, 252, 0.55);
+      box-shadow: 0 0 0 4px rgba(125, 211, 252, 0.12);
+    }
+
+    .primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #04101a;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .primary:disabled, .ghost:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .ghost {
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .chat {
+      display: grid;
+      align-content: start;
+      gap: 14px;
+      padding: 4px;
+      overflow: auto;
+    }
+
+    .message {
+      display: grid;
+      gap: 8px;
+      max-width: 82%;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: rgba(255, 255, 255, 0.03);
+      animation: pop 160ms ease-out;
+    }
+
+    .message.user {
+      margin-left: auto;
+      background: linear-gradient(180deg, rgba(29, 78, 216, 0.35), rgba(29, 78, 216, 0.20));
+      border-color: rgba(125, 211, 252, 0.18);
+    }
+
+    .message.assistant {
+      margin-right: auto;
+      background: linear-gradient(180deg, rgba(23, 37, 84, 0.75), rgba(16, 24, 43, 0.9));
+    }
+
+    .meta {
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .meta .stats {
+      color: var(--accent);
+    }
+
+    .message.error {
+      border-color: rgba(251, 113, 133, 0.4);
+      color: #fecdd3;
+      background: rgba(251, 113, 133, 0.08);
+    }
+
+    .composer {
+      display: grid;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel-2);
+    }
+
+    .composer-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @keyframes pop {
+      from { transform: translateY(6px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    @media (max-width: 860px) {
+      .shell {
+        min-height: calc(100vh - 24px);
+        padding: 14px;
+      }
+
+      header {
+        flex-direction: column;
+      }
+
+      .status {
+        width: 100%;
+        text-align: left;
+      }
+
+      .controls {
+        grid-template-columns: 1fr;
+      }
+
+      .composer-row {
+        grid-template-columns: 1fr;
+      }
+
+      .message {
+        max-width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="title">
+        <h1>Ollama Chat</h1>
+        <p>Local web UI for chatting with models on your LAN. Responses go through the Ollama API at this server.</p>
+      </div>
+      <div class="status" id="status">
+        <strong id="statusTitle">Status</strong>
+        <div id="statusBody">Loading models...</div>
+        <div class="details">
+          <span id="statusRate">Rate: -- tok/s</span>
+          <span id="statusModel">Model: --</span>
+        </div>
+      </div>
+    </header>
+
+    <section class="controls" aria-label="Chat controls">
+      <div class="field">
+        <label for="model">Model</label>
+        <select id="model"></select>
+      </div>
+      <div class="field">
+        <label for="systemPrompt">Conversation</label>
+        <select id="conversationMode">
+          <option value="keep">Keep history</option>
+          <option value="new">Start fresh each send</option>
+        </select>
+      </div>
+      <button class="ghost" id="reloadModels" type="button">Reload models</button>
+      <button class="ghost" id="clearChat" type="button">Clear chat</button>
+    </section>
+
+    <section class="chat" id="chat" aria-live="polite" aria-label="Conversation"></section>
+
+    <section class="composer">
+      <div class="field">
+        <label for="prompt">Prompt</label>
+        <textarea id="prompt" placeholder="Ask something. Shift+Enter for a new line."></textarea>
+      </div>
+      <div class="composer-row">
+        <div class="hint" id="hint">Enter to send. Uses `/api/chat` with the selected model.</div>
+        <button class="primary" id="send" type="button">Send</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const chatEl = document.getElementById('chat');
+    const promptEl = document.getElementById('prompt');
+    const modelEl = document.getElementById('model');
+    const statusEl = document.getElementById('status');
+    const statusTitleEl = document.getElementById('statusTitle');
+    const statusBodyEl = document.getElementById('statusBody');
+    const statusRateEl = document.getElementById('statusRate');
+    const statusModelEl = document.getElementById('statusModel');
+    const sendBtn = document.getElementById('send');
+    const reloadBtn = document.getElementById('reloadModels');
+    const clearBtn = document.getElementById('clearChat');
+    const modeEl = document.getElementById('conversationMode');
+
+    const state = {
+      models: [],
+      messages: [],
+      busy: false
+    };
+
+    function setStatus(title, body) {
+      statusTitleEl.textContent = title;
+      statusBodyEl.textContent = body;
+    }
+
+    function setStatusRate(text) {
+      statusRateEl.textContent = `Rate: ${text}`;
+    }
+
+    function setStatusModel(text) {
+      statusModelEl.textContent = `Model: ${text}`;
+    }
+
+    function scrollChat() {
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    function addMessage(role, content, extraClass = '') {
+      const article = document.createElement('article');
+      article.className = `message ${role} ${extraClass}`.trim();
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      const label = document.createElement('span');
+      label.textContent = role === 'user' ? 'You' : role === 'assistant' ? 'Assistant' : 'System';
+      const stats = document.createElement('span');
+      stats.className = 'stats';
+      stats.textContent = '';
+      const time = document.createElement('span');
+      time.textContent = new Date().toLocaleTimeString();
+      const text = document.createElement('div');
+      text.textContent = content;
+      meta.append(label, stats, time);
+      article.append(meta, text);
+      chatEl.appendChild(article);
+      scrollChat();
+      return { article, text, stats };
+    }
+
+    function clearChat() {
+      state.messages = [];
+      chatEl.innerHTML = '';
+      setStatus('Status', 'Chat cleared.');
+    }
+
+    function setBusy(value) {
+      state.busy = value;
+      sendBtn.disabled = value;
+      reloadBtn.disabled = value;
+      clearBtn.disabled = value;
+      modelEl.disabled = value || state.models.length === 0;
+      promptEl.disabled = value;
+    }
+
+    async function loadModels() {
+      setBusy(true);
+      setStatus('Status', 'Loading models from Ollama...');
+      try {
+        const response = await fetch('/api/tags');
+        if (!response.ok) {
+          throw new Error(`Failed to load models: ${response.status} ${response.statusText}`);
+        }
+        const data = await response.json();
+        const models = Array.isArray(data.models) ? data.models : [];
+        state.models = models;
+        modelEl.innerHTML = '';
+
+        if (models.length === 0) {
+          const option = document.createElement('option');
+          option.value = '';
+          option.textContent = 'No models available';
+          modelEl.appendChild(option);
+          setStatus('Status', 'No models found. Pull one with `ollama pull <model>`.');
+        } else {
+          for (const model of models) {
+            const option = document.createElement('option');
+            option.value = model.name;
+            option.textContent = model.name;
+            modelEl.appendChild(option);
+          }
+          setStatus('Status', `Ready with ${models.length} model${models.length === 1 ? '' : 's'}.`);
+          setStatusModel(modelEl.value || models[0].name);
+          if (!modelEl.value && models[0]) {
+            modelEl.value = models[0].name;
+          }
+        }
+      } catch (error) {
+        state.models = [];
+        modelEl.innerHTML = '<option value="">Unavailable</option>';
+        setStatus('Error', `Could not reach Ollama: ${error.message}`);
+        addMessage('system', error.message, 'error');
+      } finally {
+        modelEl.disabled = state.models.length === 0;
+        setBusy(false);
+      }
+    }
+
+    async function sendPrompt() {
+      const prompt = promptEl.value.trim();
+      const model = modelEl.value;
+
+      if (!model) {
+        setStatus('Error', 'Select a model first.');
+        return;
+      }
+
+      if (!prompt) {
+        return;
+      }
+
+      state.messages.push({ role: 'user', content: prompt });
+      addMessage('user', prompt);
+      promptEl.value = '';
+      setBusy(true);
+      setStatus('Status', `Sending to ${model}...`);
+      setStatusModel(model);
+      setStatusRate('streaming');
+
+      const placeholder = addMessage('assistant', 'Thinking...', 'streaming');
+      const requestMessages = modeEl.value === 'new'
+        ? [{ role: 'user', content: prompt }]
+        : state.messages.slice();
+
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            messages: requestMessages,
+            stream: true
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Chat request failed: ${response.status} ${response.statusText}`);
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('Streaming is not available in this browser.');
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let reply = '';
+        let evalCount = 0;
+        let evalDuration = 0;
+
+        const updateRate = () => {
+          if (evalCount > 0 && evalDuration > 0) {
+            const tps = evalCount / (evalDuration / 1e9);
+            placeholder.stats.textContent = `${tps.toFixed(2)} tok/s`;
+            setStatusRate(`${tps.toFixed(2)} tok/s`);
+          } else {
+            placeholder.stats.textContent = 'streaming';
+            setStatusRate('streaming');
+          }
+        };
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) {
+            break;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const rawLine of lines) {
+            const line = rawLine.trim();
+            if (!line) {
+              continue;
+            }
+
+            const chunk = JSON.parse(line);
+            if (chunk.message?.content) {
+              reply += chunk.message.content;
+              placeholder.text.textContent = reply;
+              scrollChat();
+            }
+
+            if (chunk.eval_count) {
+              evalCount = chunk.eval_count;
+            }
+            if (chunk.eval_duration) {
+              evalDuration = chunk.eval_duration;
+            }
+            updateRate();
+
+            if (chunk.done) {
+              break;
+            }
+          }
+        }
+
+        const tail = buffer.trim();
+        if (tail) {
+          const chunk = JSON.parse(tail);
+          if (chunk.message?.content) {
+            reply += chunk.message.content;
+            placeholder.text.textContent = reply;
+            scrollChat();
+          }
+          if (chunk.eval_count) {
+            evalCount = chunk.eval_count;
+          }
+          if (chunk.eval_duration) {
+            evalDuration = chunk.eval_duration;
+          }
+        }
+
+        if (!reply) {
+          reply = '(empty response)';
+          placeholder.text.textContent = reply;
+        }
+
+        state.messages.push({ role: 'assistant', content: reply });
+        if (evalCount > 0 && evalDuration > 0) {
+          const tps = evalCount / (evalDuration / 1e9);
+          placeholder.stats.textContent = `${tps.toFixed(2)} tok/s`;
+          setStatusRate(`${tps.toFixed(2)} tok/s`);
+        } else {
+          placeholder.stats.textContent = 'done';
+          setStatusRate('done');
+        }
+        setStatus('Status', `Answered by ${model}. ${evalCount > 0 ? `${evalCount} tokens at ${placeholder.stats.textContent}` : ''}`);
+      } catch (error) {
+        placeholder.text.textContent = error.message;
+        placeholder.article.classList.add('error');
+        setStatus('Error', error.message);
+        setStatusRate('-- tok/s');
+      } finally {
+        setBusy(false);
+        promptEl.focus();
+      }
+    }
+
+    promptEl.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendPrompt();
+      }
+    });
+
+    sendBtn.addEventListener('click', sendPrompt);
+    reloadBtn.addEventListener('click', loadModels);
+    clearBtn.addEventListener('click', clearChat);
+
+    modelEl.addEventListener('change', () => {
+      const selected = modelEl.value;
+      if (selected) {
+        setStatus('Status', `Selected ${selected}.`);
+      }
+    });
+
+    loadModels();
+  </script>
+</body>
+</html>
